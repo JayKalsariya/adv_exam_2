@@ -45,5 +45,3 @@ Contacts Manager is a Flutter application that allows users to manage their cont
 - **Provider**: State management solution.
 - **Cloud Firestore**: For backing up contacts.
 - **URL Launcher**: To initiate phone calls and SMS.
-
-## Images
