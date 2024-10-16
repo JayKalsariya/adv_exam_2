@@ -1,12 +1,12 @@
 import 'package:adv_exam_2/helper/database_helper.dart';
 import 'package:adv_exam_2/layouts/backupcontact/backup_contact_page.dart';
+import 'package:adv_exam_2/layouts/homepage/component/build_contact_card.dart';
 import 'package:flutter/material.dart';
-import 'package:logger/logger.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
   @override
   _HomePageState createState() => _HomePageState();
 }
@@ -18,22 +18,13 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _requestPermissions();
-    _fetchContacts();
+    fetchContacts();
   }
 
-  Future<void> _requestPermissions() async {
-    await [
-      Permission.phone,
-      Permission.sms,
-      Permission.contacts,
-    ].request();
-  }
-
-  Future<void> _fetchContacts() async {
-    final contacts = await _dbHelper.getContacts();
+  Future<void> fetchContacts() async {
+    final contacts = await _dbHelper.getContacts(); // Fetch updated contacts
     setState(() {
-      _contacts = contacts;
+      _contacts = contacts; // Update the state to reflect changes
     });
   }
 
@@ -45,37 +36,107 @@ class _HomePageState extends State<HomePage> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text('Add New Contact'),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          backgroundColor: Colors.teal[50],
+          title: const Text(
+            'Add New Contact',
+            style: TextStyle(color: Colors.teal),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
+                textCapitalization: TextCapitalization.words,
+                cursorColor: Colors.teal,
                 controller: nameController,
-                decoration: InputDecoration(hintText: 'Name'),
+                decoration: const InputDecoration(
+                  hintText: 'Name',
+                  filled: true,
+                  fillColor: Colors.white,
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.teal),
+                    borderRadius: BorderRadius.all(Radius.circular(10)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.teal),
+                    borderRadius: BorderRadius.all(Radius.circular(10)),
+                  ),
+                ),
               ),
+              const SizedBox(height: 10),
               TextField(
+                cursorColor: Colors.teal,
                 controller: phoneController,
-                decoration: InputDecoration(hintText: 'Phone'),
                 keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  hintText: 'Phone',
+                  filled: true,
+                  fillColor: Colors.white,
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.teal),
+                    borderRadius: BorderRadius.all(Radius.circular(10)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.teal),
+                    borderRadius: BorderRadius.all(Radius.circular(10)),
+                  ),
+                ),
               ),
             ],
           ),
           actions: [
             TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.teal),
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
               onPressed: () async {
                 final String name = nameController.text;
                 final String phone = phoneController.text;
 
-                Map<String, dynamic> newContact = {
-                  'name': name,
-                  'phone': phone
-                };
+                // Check for duplicate contact in the local database
+                final existingContact =
+                    await _dbHelper.getContactByPhone(phone);
+                if (existingContact == null) {
+                  // If no duplicate is found, add the new contact
+                  Map<String, dynamic> newContact = {
+                    'name': name,
+                    'phone': phone,
+                  };
+                  await _dbHelper.insertContact(newContact);
+                  Navigator.pop(context);
+                  fetchContacts(); // Refresh contact list
 
-                await _dbHelper.insertContact(newContact);
-                Navigator.pop(context);
-                _fetchContacts();
+                  Fluttertoast.showToast(
+                    msg: 'Contact saved!',
+                    toastLength: Toast.LENGTH_SHORT,
+                    gravity: ToastGravity.BOTTOM,
+                    backgroundColor: Colors.teal,
+                    textColor: Colors.white,
+                  );
+                } else {
+                  // Show message if contact already exists
+                  Fluttertoast.showToast(
+                    msg: 'Contact already exists.',
+                    toastLength: Toast.LENGTH_SHORT,
+                    gravity: ToastGravity.BOTTOM,
+                    backgroundColor: Colors.orange,
+                    textColor: Colors.white,
+                  );
+                }
               },
-              child: Text('Save'),
+              child: const Text('Save'),
             ),
           ],
         );
@@ -83,86 +144,40 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> _makePhoneCall(String phoneNumber) async {
-    // Request permission before making a call
-    var status = await Permission.phone.request();
-    if (status.isGranted) {
-      final Uri callUri = Uri.parse('tel:$phoneNumber');
-      if (await canLaunchUrl(callUri)) {
-        await launchUrl(callUri, mode: LaunchMode.externalApplication);
-      } else {
-        print('Could not launch $callUri');
-      }
-    } else {
-      print('Phone permission denied');
-    }
-  }
-
-  Future<void> _sendSms(String phone) async {
-    final Uri smsUri = Uri(scheme: 'sms', path: phone);
-    if (await canLaunchUrl(smsUri)) {
-      await launchUrl(smsUri);
-      Logger().i('Sending SMS to $phone');
-    } else {
-      print('Could not launch $smsUri');
-    }
-  }
-
-  Future<void> _backupContact(Map<String, dynamic> contact) async {
-    final CollectionReference contactsCollection =
-        FirebaseFirestore.instance.collection('backedUpContacts');
-    await contactsCollection.add(contact);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Contact backed up!')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Contacts'),
+        title: const Text('Contacts', style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.teal,
         actions: [
           IconButton(
-            icon: Icon(Icons.backup),
+            icon: const Icon(Icons.backup, color: Colors.white),
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => BackedUpContactsPage()),
+                MaterialPageRoute(
+                    builder: (context) => const BackedUpContactsPage()),
               );
             },
           ),
         ],
       ),
-      body: ListView.builder(
-        itemCount: _contacts.length,
-        itemBuilder: (context, index) {
-          return ListTile(
-            title: Text(_contacts[index]['name']),
-            subtitle: Text(_contacts[index]['phone']),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: Icon(Icons.call),
-                  onPressed: () => _makePhoneCall("+919265206725"),
-                ),
-                IconButton(
-                  icon: Icon(Icons.message),
-                  onPressed: () => _sendSms(_contacts[index]['phone']),
-                ),
-                IconButton(
-                  icon: Icon(Icons.cloud_upload),
-                  onPressed: () => _backupContact(_contacts[index]),
-                ),
-              ],
+      body: _contacts.isEmpty
+          ? const Center(child: Text('No any contacts'))
+          : ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+              itemCount: _contacts.length,
+              itemBuilder: (context, index) {
+                return buildContactCard(context, _contacts[index]);
+              },
             ),
-          );
-        },
-      ),
       floatingActionButton: FloatingActionButton(
-        child: Icon(Icons.add),
         onPressed: _showAddContactDialog,
+        backgroundColor: Colors.teal,
+        tooltip: 'Add Contact',
+        foregroundColor: Colors.white,
+        child: const Icon(Icons.add),
       ),
     );
   }
